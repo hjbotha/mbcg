@@ -1,4 +1,4 @@
-# moviebarcodegenerator
+# Movie Barcode Generator
 
 mbcg: A script to create movie barcodes from video files
 Usage: mbcg -f video file [-w height] [-w width] [-b first second] [-e last second] [-d]
@@ -8,4 +8,4 @@ Usage: mbcg -f video file [-w height] [-w width] [-b first second] [-e last seco
 -b Start of movie in seconds (after titles; default is 0)
 -e End of movie in seconds (before credits; default is runtime)
 -d Do not delete original .png files during processing
-   Move to processed directory instead
+     Move to processed directory instead
