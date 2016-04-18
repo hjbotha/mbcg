@@ -1,0 +1,151 @@
+#! /bin/bash
+#set -x
+
+echo
+
+# Defaults
+barcodeWidth=1920
+barcodeHeight=1080
+start=0
+donotdelete=false
+# $end will be set to the same as $runtime
+tmpdir=./bcg.$$
+
+print_usage() {
+  echo
+  echo "`basename $0`: A script to create movie barcodes from video files" >&2
+  echo "Usage: `basename $0` -f video file [-w height] [-w width] [-b first second] [-e last second] [-d]" >&2
+  echo "-f Video File" >&2
+  echo "-w Barcode Width (default is 1920)" >&2
+  echo "-h Barcode Height (default is 1080)" >&2
+  echo "-b Start of movie in seconds (after titles; default is 0)" >&2
+  echo "-e End of movie in seconds (before credits; default is runtime)" >&2
+  echo "-d Do not delete original .png files during processing" >&2
+  echo "   Move to processed directory instead" >&2
+  exit 1
+}
+
+if [ "$1" == "" ]; then
+  echo "ERROR: No options given." >&2
+  print_usage
+fi
+
+re='^[0-9]+$'
+
+while getopts ":f:w:h:b:e:" opt; do
+  case $opt in
+    f)
+      if [ "$opt" == "" ]; then
+        echo "ERROR: -$opt requires an argument." >&2
+        print_usage
+      fi
+      videoFile="$OPTARG"
+      ;;
+    w)
+      if ! [[ $OPTARG =~ $re ]]; then
+        echo "ERROR: -$opt parameter must be a whole number"
+        print_usage
+      fi
+      barcodeWidth=$OPTARG
+      ;;
+    h)
+      if ! [[ $OPTARG =~ $re ]]; then
+        echo "ERROR: -$opt parameter must be a whole number"
+        print_usage
+      fi
+      barcodeHeight=$OPTARG
+      ;;
+    b)
+      if ! [[ $OPTARG =~ $re ]]; then
+        echo "ERROR: -$opt parameter must be a whole number"
+        print_usage
+      fi
+      start=$OPTARG
+      ;;
+    e)
+      if ! [[ $OPTARG =~ $re ]]; then
+        echo "ERROR: $opt parameter must be a whole number"
+        print_usage
+      fi
+      end=$OPTARG
+      ;;
+    d)
+      donotdelete=true
+      ;;
+    :)
+      print_usage
+      ;;
+    \?)
+      echo "ERROR: Invalid argument: -$OPTARG" >&2
+      print_usage
+      ;;
+  esac
+done
+
+basename=$(basename "$videoFile")
+runtime=$(mediainfo --inform="Video;%Duration%" "$videoFile")
+
+if [ "$?" != "0" ]; then
+  echo "ERROR: $videoFile is not a valid video file." >&2
+  print_usage
+fi
+
+runtime=$((runtime / 1000))
+
+if [ "$end" == "" ]; then end=$runtime; fi
+
+echo Runtime:		"$runtime"
+echo End time:		"$end"
+echo Start Time:	"$start"
+echo Credits Duration:	"$creditsPos"
+echo Relevant time:	"$relevantTime"
+echo Interval:		"$interval"
+
+if [ $end -gt $runtime ]; then echo "ERROR: -e parameter must be less than runtime"; print_usage; fi
+
+if [ -e $tmpdir ]; then echo $tmpdir exists, please delete it.; exit 1 ; fi
+mkdir $tmpdir
+mkdir $tmpdir/resized
+mkdir $tmpdir/processed
+
+creditsPos=$((runtime - end))
+relevantTime=$((runtime - start - creditsPos))
+interval=$(echo "scale=3;$relevantTime / $barcodeWidth" | bc)
+interval=$(echo "scale=0;$interval * 1000 / 1" | bc)
+interval="1000/$interval"
+
+export_frames() {
+  ffmpeg -i "$videoFile" -ss "$start" -to "$end" -vf fps="$interval" "$tmpdir/%06d.png" >$tmpdir/ffmpeg.log 2>&1
+  touch $tmpdir/ffmpeg.done
+}
+
+resize_and_delete() {
+  for i in $tmpdir/*.png; do
+    if find "$i" -not -newermt '-5 seconds' 2>/dev/null | grep "$i" >/dev/null 2>&1; then
+      echo "Processing file $i of ~ $barcodeWidth"
+      mogrify -resize 1x"$barcodeHeight"\! -path $tmpdir/resized/ "$i"
+      if [ "$?" == "0" ]; then
+        if [ "$donotdelete" == "false" ]; then
+          rm "$i"
+        else mv "$i" $tmpdir/processed/
+        fi
+      fi
+    else
+      echo "Giving ffmpeg 2 more seconds to export more images."
+      sleep 2
+    fi
+  done
+}
+
+echo "Running ffmpeg in the background and giving it a 6 second head start."
+export_frames "$videoFile" &
+sleep 5
+
+until [ -e $tmpdir/ffmpeg.done ] && ! find $tmpdir/*.png 2>/dev/null | grep png >/dev/null; do
+    resize_and_delete "$i"
+done
+
+echo "Done resizing images, creating barcode!"
+convert $tmpdir/resized/*.png +append "$basename.png"
+echo "Done!"
+
