@@ -10,7 +10,6 @@ start=0
 donotdelete=false
 # $end will be set to the same as $runtime
 tmpdir=./bcg.$$
-#tmpdir=./a
 
 print_usage() {
   echo
@@ -124,7 +123,7 @@ resize_and_delete() {
   for i in $tmpdir/*.png; do
     if find "$i" -not -newermt '-5 seconds' 2>/dev/null | grep "$i" >/dev/null 2>&1; then
       echo "Processing file $i of ~ $barcodeWidth"
-      mogrify -type truecolor -resize 1x"$barcodeHeight"\! -path $tmpdir/resized/ "$i"
+      mogrify -resize 1x"$barcodeHeight"\! -path $tmpdir/resized/ "$i"
       if [ "$?" == "0" ]; then
         if [ "$donotdelete" == "false" ]; then
           rm "$i"
