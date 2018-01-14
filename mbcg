@@ -10,6 +10,7 @@ start=0
 donotdelete=false
 # $end will be set to the same as $runtime
 tmpdir=./bcg.$$
+#tmpdir=./a
 
 print_usage() {
   echo
@@ -94,12 +95,12 @@ runtime=$((runtime / 1000))
 
 if [ "$end" == "" ]; then end=$runtime; fi
 
-echo Runtime:		"$runtime"
-echo End time:		"$end"
-echo Start Time:	"$start"
-echo Credits Duration:	"$creditsPos"
-echo Relevant time:	"$relevantTime"
-echo Interval:		"$interval"
+echo Runtime:           "$runtime"
+echo End time:          "$end"
+echo Start Time:        "$start"
+echo Credits Duration:  "$creditsPos"
+echo Relevant time:     "$relevantTime"
+echo Interval:          "$interval"
 
 if [ $end -gt $runtime ]; then echo "ERROR: -e parameter must be less than runtime"; print_usage; fi
 
@@ -123,7 +124,7 @@ resize_and_delete() {
   for i in $tmpdir/*.png; do
     if find "$i" -not -newermt '-5 seconds' 2>/dev/null | grep "$i" >/dev/null 2>&1; then
       echo "Processing file $i of ~ $barcodeWidth"
-      mogrify -resize 1x"$barcodeHeight"\! -path $tmpdir/resized/ "$i"
+      mogrify -type truecolor -resize 1x"$barcodeHeight"\! -path $tmpdir/resized/ "$i"
       if [ "$?" == "0" ]; then
         if [ "$donotdelete" == "false" ]; then
           rm "$i"
@@ -146,6 +147,10 @@ until [ -e $tmpdir/ffmpeg.done ] && ! find $tmpdir/*.png 2>/dev/null | grep png 
 done
 
 echo "Done resizing images, creating barcode!"
-convert $tmpdir/resized/*.png +append "$basename.png"
-echo "Done!"
+# Insert temporary line 0 to ensure we get a 24bpp image
+convert -size 1x"$barcodeHeight"\! -define gradient:direction=north gradient:blue $tmpdir/resized/000000.png
+convert $tmpdir/resized/*.png +append "$tmpdir/almostdone.png"
+# remove the temporary line
+convert "$tmpdir/almostdone.png" -crop ${barcodeWidth}x${barcodeHeight}+1x${barcodeHeight} "$basename.png"
 
+echo "Done!"
