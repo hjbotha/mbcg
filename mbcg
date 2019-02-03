@@ -6,6 +6,7 @@ echo
 # Defaults
 barcodeWidth=1920
 barcodeHeight=1080
+lineWidth=1
 start=0
 donotdelete=false
 # $end will be set to the same as $runtime
@@ -14,13 +15,14 @@ tmpdir=./bcg.$$
 print_usage() {
   echo
   echo "`basename $0`: A script to create movie barcodes from video files" >&2
-  echo "Usage: `basename $0` -f video file [-w height] [-w width] [-b first second] [-e last second] [-d]" >&2
+  echo "Usage: `basename $0` -f video file [-w height] [-w width] [-b first second] [-e last second] [-d] [-l line width]" >&2
   echo "-f Video File" >&2
   echo "-w Barcode Width (default is 1920)" >&2
   echo "-h Barcode Height (default is 1080)" >&2
   echo "-b Start of movie in seconds (after titles; default is 0)" >&2
   echo "-e End of movie in seconds (before credits; default is runtime)" >&2
   echo "-d Do not delete original .png files during processing" >&2
+  echo "-l Width of each line. Default: 1"
   echo "   Move to processed directory instead" >&2
   exit 1
 }
@@ -32,7 +34,7 @@ fi
 
 re='^[0-9]+$'
 
-while getopts ":f:w:h:b:e:" opt; do
+while getopts ":f:w:h:b:e:l:" opt; do
   case $opt in
     f)
       if [ "$opt" == "" ]; then
@@ -47,6 +49,13 @@ while getopts ":f:w:h:b:e:" opt; do
         print_usage
       fi
       barcodeWidth=$OPTARG
+      ;;
+    l)
+      if ! [[ $OPTARG =~ $re ]]; then
+        echo "ERROR: -$opt parameter must be a whole number"
+        print_usage
+      fi
+      lineWidth=$OPTARG
       ;;
     h)
       if ! [[ $OPTARG =~ $re ]]; then
@@ -94,13 +103,6 @@ runtime=$((runtime / 1000))
 
 if [ "$end" == "" ]; then end=$runtime; fi
 
-echo Runtime:		"$runtime"
-echo End time:		"$end"
-echo Start Time:	"$start"
-echo Credits Duration:	"$creditsPos"
-echo Relevant time:	"$relevantTime"
-echo Interval:		"$interval"
-
 if [ $end -gt $runtime ]; then echo "ERROR: -e parameter must be less than runtime"; print_usage; fi
 
 if [ -e $tmpdir ]; then echo $tmpdir exists, please delete it.; exit 1 ; fi
@@ -111,8 +113,15 @@ mkdir $tmpdir/processed
 creditsPos=$((runtime - end))
 relevantTime=$((runtime - start - creditsPos))
 interval=$(echo "scale=3;$relevantTime / $barcodeWidth" | bc)
-interval=$(echo "scale=0;$interval * 1000 / 1" | bc)
+interval=$(echo "scale=0;$interval * 1000 / $lineWidth" | bc)
 interval="1000/$interval"
+
+echo Runtime:		"$runtime"
+echo End time:		"$end"
+echo Start Time:	"$start"
+echo Credits Duration:	"$creditsPos"
+echo Relevant time:	"$relevantTime"
+echo Interval:		"$interval"
 
 export_frames() {
   ffmpeg -i "$videoFile" -ss "$start" -to "$end" -vf fps="$interval" "$tmpdir/%06d.png" >$tmpdir/ffmpeg.log 2>&1
@@ -122,12 +131,13 @@ export_frames() {
 resize_and_delete() {
   for i in $tmpdir/*.png; do
     if find "$i" -not -newermt '-5 seconds' 2>/dev/null | grep "$i" >/dev/null 2>&1; then
-      echo "Processing file $i of ~ $barcodeWidth"
-      mogrify -resize 1x"$barcodeHeight"\! -path $tmpdir/resized/ "$i"
+      echo "Processing file $i of ~ $(echo $barcodeWidth / $lineWidth | bc)"
+      mogrify -resize ${lineWidth}x"$barcodeHeight"\! -path $tmpdir/resized/ "$i"
       if [ "$?" == "0" ]; then
         if [ "$donotdelete" == "false" ]; then
           rm "$i"
-        else mv "$i" $tmpdir/processed/
+        else
+          mv "$i" $tmpdir/processed/
         fi
       fi
     else
@@ -146,6 +156,10 @@ until [ -e $tmpdir/ffmpeg.done ] && ! find $tmpdir/*.png 2>/dev/null | grep png 
 done
 
 echo "Done resizing images, creating barcode!"
-convert $tmpdir/resized/*.png +append "$basename.png"
+mkdir output 2>&1
+convert $tmpdir/resized/*.png +append "output/$basename.png"
+if [ "$donotdelete" == "false" ]; then
+  rm -r "$tmpdir"
+fi
 echo "Done!"
 
