@@ -6,6 +6,7 @@ echo
 # Defaults
 barcodeWidth=1920
 barcodeHeight=1080
+finalWidth=$barcodeWidth
 lineWidth=1
 start=0
 donotdelete=false
@@ -21,9 +22,10 @@ print_usage() {
   echo "-h Barcode Height (default is 1080)" >&2
   echo "-b Start of movie in seconds (after titles; default is 0)" >&2
   echo "-e End of movie in seconds (before credits; default is runtime)" >&2
-  echo "-d Do not delete original .png files during processing" >&2
   echo "-l Width of each line. Default: 1"
+  echo "-d Do not delete original .png files during processing" >&2
   echo "   Move to processed directory instead" >&2
+  echo "-i Resize barcode to this width after generation. Larger multiples of barcode width give smoother results. Defaults to barcode width."
   exit 1
 }
 
@@ -34,8 +36,15 @@ fi
 
 re='^[0-9]+$'
 
-while getopts ":f:w:h:b:e:l:" opt; do
+while getopts ":f:w:h:b:e:l:i:" opt; do
   case $opt in
+    i)
+      if [ "$opt" == "" ]; then
+        echo "ERROR: -$opt requires an argument." >&2
+        print_usage
+      fi
+      finalWidth="$OPTARG"
+      ;;
     f)
       if [ "$opt" == "" ]; then
         echo "ERROR: -$opt requires an argument." >&2
@@ -99,7 +108,7 @@ if [ "$?" != "0" ]; then
   print_usage
 fi
 
-runtime=$((runtime / 1000))
+runtime=$(echo $runtime / 1000 | bc)
 
 if [ "$end" == "" ]; then end=$runtime; fi
 
@@ -113,7 +122,7 @@ mkdir $tmpdir/processed
 creditsPos=$((runtime - end))
 relevantTime=$((runtime - start - creditsPos))
 interval=$(echo "scale=3;$relevantTime / $barcodeWidth" | bc)
-interval=$(echo "scale=0;$interval * 1000 / $lineWidth" | bc)
+interval=$(echo "scale=0;$interval * 1000 * $lineWidth" | bc)
 interval="1000/$interval"
 
 echo Runtime:		"$runtime"
@@ -122,6 +131,7 @@ echo Start Time:	"$start"
 echo Credits Duration:	"$creditsPos"
 echo Relevant time:	"$relevantTime"
 echo Interval:		"$interval"
+echo Line width:	"$lineWidth"
 
 export_frames() {
   ffmpeg -i "$videoFile" -ss "$start" -to "$end" -vf fps="$interval" "$tmpdir/%06d.png" >$tmpdir/ffmpeg.log 2>&1
@@ -156,8 +166,23 @@ until [ -e $tmpdir/ffmpeg.done ] && ! find $tmpdir/*.png 2>/dev/null | grep png 
 done
 
 echo "Done resizing images, creating barcode!"
-mkdir output 2>&1
-convert $tmpdir/resized/*.png +append "output/$basename.png"
+mkdir output >/dev/null 2>&1
+convert $tmpdir/resized/*.png +append "$tmpdir/barcode.png"
+
+while [ -f "output/$basename.png" ]; do
+  if [ "$i" == "" ]; then
+    i=1
+  else
+    i=$(expr i + 1)
+  fi
+  basename=${basename}${i}
+done
+
+if [[ ! "$barcodeWidth" == "lineWidth" ]]; then
+  mogrify -resize ${finalWidth}x"$barcodeHeight"\! -write "output/$basename.png" "$tmpdir/barcode.png"
+else
+  mv "$tmpdir/barcode.png" "output/$basename.png"
+fi
 if [ "$donotdelete" == "false" ]; then
   rm -r "$tmpdir"
 fi
