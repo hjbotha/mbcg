@@ -1,12 +1,12 @@
 #! /bin/bash
 #set -x
 
+set -e
 echo
 
 # Defaults
 barcodeWidth=1920
 barcodeHeight=1080
-finalWidth=$barcodeWidth
 lineWidth=1
 start=0
 donotdelete=false
@@ -14,9 +14,8 @@ donotdelete=false
 tmpdir=./bcg.$$
 
 print_usage() {
-  echo
-  echo "`basename $0`: A script to create movie barcodes from video files" >&2
-  echo "Usage: `basename $0` -f video file [-w height] [-w width] [-b first second] [-e last second] [-d] [-l line width]" >&2
+  echo "$(basename $0): A script to create movie barcodes from video files" >&2
+  echo "Usage: $(basename $0) -f video file [-w height] [-w width] [-b first second] [-e last second] [-d] [-l line width]" >&2
   echo "-f Video File" >&2
   echo "-w Barcode Width (default is 1920)" >&2
   echo "-h Barcode Height (default is 1080)" >&2
@@ -25,7 +24,9 @@ print_usage() {
   echo "-l Width of each line. Default: 1"
   echo "-d Do not delete original .png files during processing" >&2
   echo "   Move to processed directory instead" >&2
-  echo "-i Resize barcode to this width after generation. Larger multiples of barcode width give smoother results. Defaults to barcode width."
+  echo "-i Resize barcode to this width after generation" >&2
+  echo "   Larger multiples of barcode width give smoother results" >&2
+  echo "   Defaults to barcode width" >&2
   exit 1
 }
 
@@ -36,67 +37,67 @@ fi
 
 re='^[0-9]+$'
 
-while getopts ":f:w:h:b:e:l:i:" opt; do
+while getopts ":f:w:h:b:e:l:i:d" opt; do
   case $opt in
-    i)
-      if [ "$opt" == "" ]; then
-        echo "ERROR: -$opt requires an argument." >&2
-        print_usage
-      fi
-      finalWidth="$OPTARG"
-      ;;
-    f)
-      if [ "$opt" == "" ]; then
-        echo "ERROR: -$opt requires an argument." >&2
-        print_usage
-      fi
-      videoFile="$OPTARG"
-      ;;
-    w)
-      if ! [[ $OPTARG =~ $re ]]; then
-        echo "ERROR: -$opt parameter must be a whole number"
-        print_usage
-      fi
-      barcodeWidth=$OPTARG
-      ;;
-    l)
-      if ! [[ $OPTARG =~ $re ]]; then
-        echo "ERROR: -$opt parameter must be a whole number"
-        print_usage
-      fi
-      lineWidth=$OPTARG
-      ;;
-    h)
-      if ! [[ $OPTARG =~ $re ]]; then
-        echo "ERROR: -$opt parameter must be a whole number"
-        print_usage
-      fi
-      barcodeHeight=$OPTARG
-      ;;
-    b)
-      if ! [[ $OPTARG =~ $re ]]; then
-        echo "ERROR: -$opt parameter must be a whole number"
-        print_usage
-      fi
-      start=$OPTARG
-      ;;
-    e)
-      if ! [[ $OPTARG =~ $re ]]; then
-        echo "ERROR: $opt parameter must be a whole number"
-        print_usage
-      fi
-      end=$OPTARG
-      ;;
-    d)
-      donotdelete=true
-      ;;
-    :)
+  i)
+    if ! [[ $OPTARG =~ $re ]]; then
+      echo "ERROR: -$opt parameter must be a whole number"
       print_usage
-      ;;
-    \?)
-      echo "ERROR: Invalid argument: -$OPTARG" >&2
+    fi
+    finalWidth="$OPTARG"
+    ;;
+  f)
+    if [ "$opt" == "" ]; then
+      echo "ERROR: -$opt requires an argument." >&2
       print_usage
-      ;;
+    fi
+    videoFile="$OPTARG"
+    ;;
+  w)
+    if ! [[ $OPTARG =~ $re ]]; then
+      echo "ERROR: -$opt parameter must be a whole number"
+      print_usage
+    fi
+    barcodeWidth=$OPTARG
+    ;;
+  l)
+    if ! [[ $OPTARG =~ $re ]]; then
+      echo "ERROR: -$opt parameter must be a whole number"
+      print_usage
+    fi
+    lineWidth=$OPTARG
+    ;;
+  h)
+    if ! [[ $OPTARG =~ $re ]]; then
+      echo "ERROR: -$opt parameter must be a whole number"
+      print_usage
+    fi
+    barcodeHeight=$OPTARG
+    ;;
+  b)
+    if ! [[ $OPTARG =~ $re ]]; then
+      echo "ERROR: -$opt parameter must be a whole number"
+      print_usage
+    fi
+    start=$OPTARG
+    ;;
+  e)
+    if ! [[ $OPTARG =~ $re ]]; then
+      echo "ERROR: $opt parameter must be a whole number"
+      print_usage
+    fi
+    end=$OPTARG
+    ;;
+  d)
+    donotdelete=true
+    ;;
+  :)
+    print_usage
+    ;;
+  \?)
+    echo "ERROR: Invalid argument: -$OPTARG" >&2
+    print_usage
+    ;;
   esac
 done
 
@@ -112,29 +113,39 @@ runtime=$(echo $runtime / 1000 | bc)
 
 if [ "$end" == "" ]; then end=$runtime; fi
 
-if [ $end -gt $runtime ]; then echo "ERROR: -e parameter must be less than runtime"; print_usage; fi
+if [ $end -gt $runtime ]; then
+  echo "ERROR: -e parameter must be less than runtime"
+  print_usage
+fi
 
-if [ -e $tmpdir ]; then echo $tmpdir exists, please delete it.; exit 1 ; fi
+if [ -e $tmpdir ]; then
+  echo $tmpdir exists, please delete it.
+  exit 1
+fi
 mkdir $tmpdir
 mkdir $tmpdir/resized
 mkdir $tmpdir/processed
 
 creditsPos=$((runtime - end))
 relevantTime=$((runtime - start - creditsPos))
-interval=$(echo "scale=3;$relevantTime / $barcodeWidth" | bc)
-interval=$(echo "scale=0;$interval * 1000 * $lineWidth" | bc)
+interval=$(echo "scale=6;$relevantTime / $barcodeWidth" | bc)
+interval=$(echo "scale=3;$interval * 1000 * $lineWidth" | bc)
 interval="1000/$interval"
 
-echo Runtime:		"$runtime"
-echo End time:		"$end"
-echo Start Time:	"$start"
-echo Credits Duration:	"$creditsPos"
-echo Relevant time:	"$relevantTime"
-echo Interval:		"$interval"
-echo Line width:	"$lineWidth"
+echo "Runtime:          $runtime"
+echo "Start Time:       $start"
+echo "End time:         $end"
+echo "Credits Duration: $creditsPos"
+echo "Relevant time:    $relevantTime"
+echo "Interval:         $interval"
+echo "Line width:       $lineWidth"
+echo "Barcode width:    $barcodeWidth"
+echo "Barcode height:   $barcodeHeight"
+echo
 
 export_frames() {
   ffmpeg -i "$videoFile" -ss "$start" -to "$end" -vf fps="$interval" "$tmpdir/%06d.png" >$tmpdir/ffmpeg.log 2>&1
+  # ffmpeg is done, but wait 5 seconds before we admit it to prevent a race condition
   touch $tmpdir/ffmpeg.done
 }
 
@@ -151,40 +162,43 @@ resize_and_delete() {
         fi
       fi
     else
-      echo "Giving ffmpeg 2 more seconds to export more images."
+      echo "Giving ffmpeg 2 more seconds to export more images or tell us it's done."
       sleep 2
     fi
   done
 }
 
-echo "Running ffmpeg in the background and giving it a 6 second head start."
+echo "Running ffmpeg in the background and giving it a 5 second head start."
 export_frames "$videoFile" &
 sleep 5
 
-until [ -e $tmpdir/ffmpeg.done ] && ! find $tmpdir/*.png 2>/dev/null | grep png >/dev/null; do
-    resize_and_delete "$i"
+until find $tmpdir/ffmpeg.done -not -newermt '-10 seconds' 2>/dev/null |
+  grep '.*' >/dev/null 2>&1 &&
+  ! find $tmpdir/\*.png 2>/dev/null | grep png >/dev/null; do
+  resize_and_delete
 done
 
-echo "Done resizing images, creating barcode!"
-mkdir output >/dev/null 2>&1
+echo "Done resizing images, creating barcode"
+if [ ! -d output ]; then mkdir output >/dev/null 2>&1; fi
 convert $tmpdir/resized/*.png +append "$tmpdir/barcode.png"
 
-while [ -f "output/$basename.png" ]; do
-  if [ "$i" == "" ]; then
-    i=1
+while [ -f "output/${basename}${j}.png" ]; do
+  if [ "$j" == "" ]; then
+    j=1
   else
-    i=$(expr i + 1)
+    j=$(expr $j + 1)
   fi
-  basename=${basename}${i}
 done
 
-if [[ ! "$barcodeWidth" == "lineWidth" ]]; then
+basename=${basename}${j}
+
+if [[ $finalWidth =~ $re ]]; then
   mogrify -resize ${finalWidth}x"$barcodeHeight"\! -write "output/$basename.png" "$tmpdir/barcode.png"
 else
   mv "$tmpdir/barcode.png" "output/$basename.png"
 fi
+
 if [ "$donotdelete" == "false" ]; then
   rm -r "$tmpdir"
 fi
 echo "Done!"
-
